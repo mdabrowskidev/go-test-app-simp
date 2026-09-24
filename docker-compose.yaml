@@ -1,0 +1,9 @@
+version: '3.9'
+
+services:
+  go-app-simp:
+    container_name: go-app-simp
+    image: mdabrowski/go-app-simp:1.0.0
+    build: .
+    ports:
+      - "8000:8000"
