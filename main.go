@@ -16,7 +16,7 @@ func main() {
 	router.HandleFunc("/test-page", getTestPage()).Methods("GET")
 
 	//start server
-	log.Fatal(http.ListenAndServe(":8000", jsonContentTypeMiddleware(router)))
+	log.Fatal(http.ListenAndServe(":8080", jsonContentTypeMiddleware(router)))
 }
 
 func getHelloWorld() func(http.ResponseWriter, *http.Request) {

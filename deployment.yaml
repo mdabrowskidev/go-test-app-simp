@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-test-app
+  namespace: dev
+  labels:
+    team: wiki-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-test-app
+  template:
+    metadata:
+      labels:
+        app: go-test-app
+        team: wiki-platform
+    spec:
+      containers:
+        - name: go-test-app
+          image: artifactory.wikia-inc.com/mdabrowski/go-test-app:05
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-test-app
+  namespace: dev
+  labels:
+    team: wiki-platform
+spec:
+  selector:
+    app: go-test-app
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
