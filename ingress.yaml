@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-test-app
+  namespace: dev
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: go-test-app.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: go-test-app
+                port:
+                  number: 80
