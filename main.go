@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type User struct {
@@ -32,12 +33,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	//connect to rabbitmq, separate channels for publishing and consuming
+	rabbit := connectRabbit(os.Getenv("RABBITMQ_URL"))
+	defer rabbit.Close()
+
+	publishCh := openChannel(rabbit)
+	consumeCh := openChannel(rabbit)
+	go consumeUsers(consumeCh, db)
+
 	//create router
 	router := mux.NewRouter()
 	router.HandleFunc("/hello", getHelloWorld(db)).Methods("GET")
 	router.HandleFunc("/users", getUsers(db)).Methods("GET")
 	router.HandleFunc("/users/{id}", getUser(db)).Methods("GET")
-	router.HandleFunc("/users", createUser(db)).Methods("POST")
+	router.HandleFunc("/users", createUser(publishCh)).Methods("POST")
 	router.HandleFunc("/users/{id}", updateUser(db)).Methods("PUT")
 	router.HandleFunc("/users/{id}", deleteUser(db)).Methods("DELETE")
 
@@ -100,18 +109,23 @@ func getUser(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// create user
-func createUser(db *sql.DB) http.HandlerFunc {
+// create user, queued and saved to the database by the consumer
+func createUser(ch *amqp.Channel) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var u User
-		json.NewDecoder(r.Body).Decode(&u)
-
-		err := db.QueryRow("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id", u.Name, u.Email).Scan(&u.ID)
-		if err != nil {
-			log.Fatal(err)
+		if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 
-		json.NewEncoder(w).Encode(u)
+		if err := publishUser(ch, u); err != nil {
+			log.Printf("publish failed: %v", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode("User queued")
 	}
 }
 
