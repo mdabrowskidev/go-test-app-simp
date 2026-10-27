@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: go-test-app
-          image: artifactory.wikia-inc.com/mdabrowski/go-test-app:08
+          image: artifactory.wikia-inc.com/mdabrowski/go-test-app:09
           ports:
             - containerPort: 8080
           env:

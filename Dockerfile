@@ -15,4 +15,4 @@ EXPOSE 8080
 
 CMD ["./api"]
 
-#   docker buildx build --platform linux/amd64 -t artifactory.wikia-inc.com/mdabrowski/go-test-app:<REVISION NUMBER>--push .
+#   docker buildx build --platform linux/amd64,linux/arm64 -t artifactory.wikia-inc.com/mdabrowski/go-test-app:<REVISION NUMBER>--push .
