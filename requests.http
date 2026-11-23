@@ -1,13 +1,13 @@
-POST http://localhost:8000/users
+POST http://go-test-app.local:8081/users
 Content-Type: application/json
 
 {
-    "name":"John Cena",
-    "email":"john.cena@gmail.com"
+    "name":"Ronald Rivest",
+    "email":"ronald.rivest@gmail.com"
 }
 
 ###
-GET http://localhost:8000/users
+GET http://go-test-app.local:8081/users
 
 ###
 GET http://localhost:8000/users/3

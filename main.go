@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"os"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -19,15 +19,24 @@ type User struct {
 }
 
 func main() {
-	//connect to database
-	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	//connect to database, writes go to the primary and reads to the replicas
+	db, err := sql.Open("mysql", os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	readDB := db
+	if readURL := os.Getenv("DATABASE_READ_URL"); readURL != "" {
+		readDB, err = sql.Open("mysql", readURL)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer readDB.Close()
+	}
+
 	//create the table if it doesn't exist
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name TEXT, email TEXT)")
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name TEXT, email TEXT)")
 
 	if err != nil {
 		log.Fatal(err)
@@ -43,9 +52,9 @@ func main() {
 
 	//create router
 	router := mux.NewRouter()
-	router.HandleFunc("/hello", getHelloWorld(db)).Methods("GET")
-	router.HandleFunc("/users", getUsers(db)).Methods("GET")
-	router.HandleFunc("/users/{id}", getUser(db)).Methods("GET")
+	router.HandleFunc("/hello", getHelloWorld(readDB)).Methods("GET")
+	router.HandleFunc("/users", getUsers(readDB)).Methods("GET")
+	router.HandleFunc("/users/{id}", getUser(readDB)).Methods("GET")
 	router.HandleFunc("/users", createUser(publishCh)).Methods("POST")
 	router.HandleFunc("/users/{id}", updateUser(db)).Methods("PUT")
 	router.HandleFunc("/users/{id}", deleteUser(db)).Methods("DELETE")
@@ -99,7 +108,7 @@ func getUser(db *sql.DB) http.HandlerFunc {
 		id := vars["id"]
 
 		var u User
-		err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.ID, &u.Name, &u.Email)
+		err := db.QueryRow("SELECT * FROM users WHERE id = ?", id).Scan(&u.ID, &u.Name, &u.Email)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -138,7 +147,7 @@ func updateUser(db *sql.DB) http.HandlerFunc {
 		vars := mux.Vars(r)
 		id := vars["id"]
 
-		_, err := db.Exec("UPDATE users SET name = $1, email = $2 WHERE id = $3", u.Name, u.Email, id)
+		_, err := db.Exec("UPDATE users SET name = ?, email = ? WHERE id = ?", u.Name, u.Email, id)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -154,12 +163,12 @@ func deleteUser(db *sql.DB) http.HandlerFunc {
 		id := vars["id"]
 
 		var u User
-		err := db.QueryRow("SELECT * FROM users WHERE id = $1", id).Scan(&u.ID, &u.Name, &u.Email)
+		err := db.QueryRow("SELECT * FROM users WHERE id = ?", id).Scan(&u.ID, &u.Name, &u.Email)
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		} else {
-			_, err := db.Exec("DELETE FROM users WHERE id = $1", id)
+			_, err := db.Exec("DELETE FROM users WHERE id = ?", id)
 			if err != nil {
 				//todo : fix error handling
 				w.WriteHeader(http.StatusNotFound)

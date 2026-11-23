@@ -1,0 +1,143 @@
+
+# MySQL primary-replica setup with GTID based replication
+# mysql-0 is the primary (writes), every other pod is a read-only replica of it
+#
+# required secret:
+#   kubectl -n dev create secret generic mysql-credentials \
+#     --from-literal=MYSQL_ROOT_PASSWORD=... \
+#     --from-literal=MYSQL_DATABASE=... \
+#     --from-literal=MYSQL_USER=... \
+#     --from-literal=MYSQL_PASSWORD=... \
+#     --from-literal=MYSQL_REPLICATION_PASSWORD=...
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql
+  namespace: dev
+data:
+  replication.cnf: |
+    [mysqld]
+    log_bin = mysql-bin
+    relay_log = relay-bin
+    gtid_mode = ON
+    enforce_gtid_consistency = ON
+  # runs only once, when the data directory is initialised
+  replication.sh: |
+    ordinal=${HOSTNAME##*-}
+    if [ "$ordinal" = "0" ]; then
+      mysql_note "Creating replication user"
+      docker_process_sql --database=mysql <<-EOSQL
+        CREATE USER IF NOT EXISTS 'repl'@'%' IDENTIFIED BY '${MYSQL_REPLICATION_PASSWORD}';
+        GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+    EOSQL
+    else
+      mysql_note "Configuring replica of mysql-0"
+      docker_process_sql --database=mysql <<-EOSQL
+        CHANGE REPLICATION SOURCE TO
+          SOURCE_HOST='mysql-0.mysql',
+          SOURCE_PORT=3306,
+          SOURCE_USER='repl',
+          SOURCE_PASSWORD='${MYSQL_REPLICATION_PASSWORD}',
+          SOURCE_AUTO_POSITION=1,
+          GET_SOURCE_PUBLIC_KEY=1;
+        START REPLICA;
+        SET PERSIST super_read_only = ON;
+    EOSQL
+    fi
+---
+# headless service, gives every pod a stable dns name (mysql-0.mysql is the primary)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: dev
+spec:
+  clusterIP: None
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      name: mysql
+---
+# service for reads, load balanced across all pods
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-read
+  namespace: dev
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      name: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: dev
+spec:
+  serviceName: mysql
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          command: ["bash", "-c"]
+          args:
+            - |
+              ordinal=${HOSTNAME##*-}
+              if [ "$ordinal" != "0" ]; then
+                # database, user and grants are replicated from the primary
+                unset MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD
+              fi
+              exec docker-entrypoint.sh mysqld --server-id=$((100 + ordinal))
+          ports:
+            - containerPort: 3306
+          envFrom:
+            - secretRef:
+                name: mysql-credentials
+          env:
+            - name: MYSQL_INITDB_SKIP_TZINFO
+              value: "1"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+            - name: config
+              mountPath: /etc/mysql/conf.d/replication.cnf
+              subPath: replication.cnf
+            - name: config
+              mountPath: /docker-entrypoint-initdb.d/replication.sh
+              subPath: replication.sh
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 2Gi

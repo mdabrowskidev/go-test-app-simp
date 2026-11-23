@@ -25,20 +25,22 @@ spec:
             - name: DB_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_USER
+                  name: mysql-credentials
+                  key: MYSQL_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_PASSWORD
+                  name: mysql-credentials
+                  key: MYSQL_PASSWORD
             - name: DB_NAME
               valueFrom:
                 secretKeyRef:
-                  name: postgres-credentials
-                  key: POSTGRES_DB
+                  name: mysql-credentials
+                  key: MYSQL_DATABASE
             - name: DATABASE_URL
-              value: "postgres://$(DB_USER):$(DB_PASSWORD)@postgres:5432/$(DB_NAME)?sslmode=disable"
+              value: "$(DB_USER):$(DB_PASSWORD)@tcp(mysql-0.mysql:3306)/$(DB_NAME)"
+            - name: DATABASE_READ_URL
+              value: "$(DB_USER):$(DB_PASSWORD)@tcp(mysql-read:3306)/$(DB_NAME)"
             - name: RABBITMQ_USER
               valueFrom:
                 secretKeyRef:

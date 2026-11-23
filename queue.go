@@ -79,7 +79,7 @@ func consumeUsers(ch *amqp.Channel, db *sql.DB) {
 			continue
 		}
 
-		err := db.QueryRow("INSERT INTO users (name, email) VALUES ($1, $2) RETURNING id", u.Name, u.Email).Scan(&u.ID)
+		res, err := db.Exec("INSERT INTO users (name, email) VALUES (?, ?)", u.Name, u.Email)
 		if err != nil {
 			log.Printf("insert failed, requeueing: %v", err)
 			time.Sleep(time.Second)
@@ -87,7 +87,8 @@ func consumeUsers(ch *amqp.Channel, db *sql.DB) {
 			continue
 		}
 
-		log.Printf("created user %d from queue", u.ID)
+		id, _ := res.LastInsertId()
+		log.Printf("created user %d from queue", id)
 		msg.Ack(false)
 	}
 
