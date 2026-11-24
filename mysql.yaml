@@ -39,6 +39,7 @@ data:
           SOURCE_USER='repl',
           SOURCE_PASSWORD='${MYSQL_REPLICATION_PASSWORD}',
           SOURCE_AUTO_POSITION=1,
+          SOURCE_CONNECT_RETRY=10,
           GET_SOURCE_PUBLIC_KEY=1;
         START REPLICA;
         SET PERSIST super_read_only = ON;
@@ -53,6 +54,9 @@ metadata:
   namespace: dev
 spec:
   clusterIP: None
+  # keep mysql-0.mysql resolvable when a pod is briefly not ready (e.g. slow probe under load),
+  # the app writes and the replica replicates through this name
+  publishNotReadyAddresses: true
   selector:
     app: mysql
   ports:
@@ -122,6 +126,7 @@ spec:
               command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$MYSQL_ROOT_PASSWORD\""]
             initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 5
           resources:
             requests:
               cpu: 100m
